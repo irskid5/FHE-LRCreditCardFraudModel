@@ -13,7 +13,6 @@ public:
 	SecretKey secretKey;
 	RelinKeys relinKeys;
 	GaloisKeys galoisKeys;
-	GaloisKeys galoisKeysFull;
 
 	vector<vector<double>> weights1;
 	vector<double> biases1;
@@ -24,6 +23,7 @@ public:
 
 	vector<vector<double>> test_features;
 	vector<double> test_labels;
+	vector<double> npRes;
 
 	vector<Ciphertext> x;
 
@@ -31,21 +31,36 @@ public:
 	
 	Model()
 	{
-		cout << "Default Constructor called" << endl;
+		cout << "BEGIN INIT" << endl;
+		
 		// Set up params
 		EncryptionParameters parms(scheme_type::CKKS);
-		degree = 15;
-		int depth = ceil(log2(degree));
-		vector<int> moduli(depth + 4 + 7, 60);
-		moduli[0] = 40;
-		moduli[moduli.size() - 1] = 40;
-		size_t poly_modulus_degree = 16384*2;
-		parms.set_poly_modulus_degree(poly_modulus_degree);
-		parms.set_coeff_modulus(CoeffModulus::Create(
-			poly_modulus_degree, moduli));
+		degree = 7;
+
+		cout << "Polynomial Degree = " << degree << endl;
+
+		ifstream fsParam("params.seal", ios::binary);
+		if (fsParam.good()) {
+			parms.load(fsParam);
+		}
+		else {
+			int depth = ceil(log2(degree));
+			cout << "depth = " << depth << endl;
+			vector<int> moduli(13, 40);
+			moduli[0] = 40;
+			moduli[moduli.size() - 1] = 40;
+			size_t poly_modulus_degree = 16384*2;
+			parms.set_poly_modulus_degree(poly_modulus_degree);
+			parms.set_coeff_modulus(CoeffModulus::Create(
+				poly_modulus_degree, moduli));
+			ofstream fs("params.seal", ios::binary);
+			parms.save(fs);
+			fs.close();
+		}
+		fsParam.close();
 		
 		// Set up scale
-		scale = pow(2.0, 60);
+		scale = pow(2.0, 40);
 		
 		// Set up context
 		ctx = SEALContext::Create(parms);
@@ -55,24 +70,53 @@ public:
 
 		cout << ctx->parameters_set() << endl;
 
-		cout << "Generating keys..." << endl;
+		cout << "Importing/Generating keys..." << endl;
+		
 		KeyGenerator keygen(ctx);
-		publicKey = keygen.public_key();
-		secretKey = keygen.secret_key();
-		relinKeys = keygen.relin_keys();
-		vector<int> steps(29, 0);
-		for (int i = 1; i < 30; i++) {
-			steps[i-1] = i;
+
+		ifstream fsPriv("priv.key", ios::binary);
+		ifstream fsPub("pub.key", ios::binary);
+		ifstream fsRelin("relin.key", ios::binary);
+		ifstream fsGal("gal.key", ios::binary);
+		if (fsPriv.good() && fsPub.good() && fsRelin.good() && fsGal.good()) {
+			secretKey.load(ctx, fsPriv);
+			publicKey.load(ctx, fsPub);
+			relinKeys.load(ctx, fsRelin);
+			galoisKeys.load(ctx, fsGal);
 		}
-		galoisKeys = keygen.galois_keys(steps);
-		galoisKeysFull = keygen.galois_keys();
+		else {
+			// Create Keys
+			KeyGenerator keygen(ctx);
+			publicKey = keygen.public_key();
+			secretKey = keygen.secret_key();
+			relinKeys = keygen.relin_keys();
+			vector<int> steps;
+			for (int i = 1; i < 30; i++) {
+				steps.push_back(i);
+			}
+			steps.push_back(32);
+
+			galoisKeys = keygen.galois_keys(steps);
+
+			ofstream fsPrivO("priv.key", ios::binary);
+			ofstream fsPubO("pub.key", ios::binary);
+			ofstream fsRelinO("relin.key", ios::binary);
+			ofstream fsGalO("gal.key", ios::binary);
+			secretKey.save(fsPrivO);
+			publicKey.save(fsPubO);
+			relinKeys.save(fsRelinO);
+			galoisKeys.save(fsGalO);
+			fsPrivO.close();
+			fsPubO.close();
+			fsRelinO.close();
+			fsGalO.close();
+		}
+		fsPriv.close();
+		fsPub.close();
+		fsRelin.close();
+		fsGal.close();
 
 		cout << "DONE" << endl;
-		
-		cout << "Public Keys Size (Bytes) = " << sizeof(publicKey) << endl;
-		cout << "Private Keys Size (Bytes) = " << sizeof(secretKey) << endl;
-		cout << "Relin Keys Size (Bytes) = " << sizeof(relinKeys) << endl;
-		cout << "Galois Keys Size (Bytes) = " << sizeof(galoisKeys) << endl;
 
 		string filename = "D:\\Documents\\University Files\\Year 4\\Thesis\\dev\\KerasMLModel\\model1t0.04clip1\\realCoefficients\\weights1.csv";
 		importMatrix(filename, ',' , weights1);
@@ -94,6 +138,9 @@ public:
 
 		filename = "D:\\Documents\\University Files\\Year 4\\Thesis\\dev\\KerasMLModel\\model1t0.04clip1\\realCoefficients\\test_labels.csv";
 		importVector(filename, ',', test_labels);
+
+		filename = "D:\\Documents\\University Files\\Year 4\\Thesis\\dev\\KerasMLModel\\model1t0.04clip1\\realCoefficients\\plainRes.csv";
+		importVector(filename, ',', npRes);
 
 		cout << "DONE INIT" << endl;
 	}
@@ -198,8 +245,8 @@ public:
 
 		// Rotate and add destination vector to get dot product
 		Ciphertext temp;
-		for (size_t i = 1; i <= slotsCount/2; i<<=1) {
-			evaluator.rotate_vector(destination, i, galoisKeysFull, temp);
+		for (size_t i = 1; i <= 32; i<<=1) {
+			evaluator.rotate_vector(destination, i, galoisKeys, temp);
 			if (i == 0) {
 				destination = temp;
 			}
@@ -299,7 +346,7 @@ public:
 		// result += a[i]*x[i]
 		for (int i = 1; i <= degree; i++) {
 			// Even coeff (except 0 and 2) are zero, continue to next to avoid transparent ctx 
-			if ((i % 2 == 0) && (i != 0) && (i != 2)) {
+			if (plain_coeffs[i].is_zero()) {
 				continue;
 			}
 			// Continue with algo
@@ -337,25 +384,33 @@ void testModel() {
 	vector<double> predictions(mdl.test_labels.size(), -1);
 
 	double loss = 0;
+	int fp = 0;
+	int tp = 0;
+	int fn = 0;
+	int tn = 0;
+	double avgCalcErr = 0;
+	double avgActErr = 0;
 
 	// encode into diagonals
 	vector<Plaintext> ptxt_diag(dim);
 	mdl.encodeMatrixIntoDiag(ptxt_diag, encoder, dim, mdl.weights1, mdl.scale);
 
-	for (int s = 0; s < 100; s++) {
+	auto t1 = std::chrono::high_resolution_clock::now();
+
+	for (int s = 0; s < mdl.test_features.size(); s++) {
 		
 		cout << "-------------------------- Starting s = " << s << " prediction --------------------------" << endl;
 		
 		vector<double> v = mdl.test_features[s];
 
 		// Plaintext computation 
-		//vector<double> resReal(dim, 0);
-		//for (int i = 0; i < mdl.weights1.size(); i++) {
-		//	for (int j = 0; j < dim; j++) {
-		//		resReal[i] += mdl.weights1[i][j] * v[j];
-		//	}
-		//	resReal[i] += mdl.biases1[i];
-		//}
+		vector<double> resReal(dim, 0);
+		for (int i = 0; i < mdl.weights1.size(); i++) {
+			for (int j = 0; j < dim; j++) {
+				resReal[i] += mdl.weights1[i][j] * v[j];
+			}
+			resReal[i] += mdl.biases1[i];
+		}
 
 		// repeat v throughout plaintext
 		Plaintext ptxt_vec;
@@ -367,9 +422,13 @@ void testModel() {
 		Ciphertext ctv;
 		encryptor.encrypt(ptxt_vec, ctv);
 
+		cout << "Current depth = " << ctv.coeff_mod_count() << endl;
+
 		// Perform matmul of ctv and diag plaintext vector
 		Ciphertext enc_result;
 		mdl.matmul(ptxt_diag, ctv, enc_result, dim, evaluator);
+
+		cout << "Current depth = " << enc_result.coeff_mod_count() << endl;
 
 		// Add bias 1 to answer
 		Plaintext biases1_plain;
@@ -389,37 +448,41 @@ void testModel() {
 		Ciphertext result_ctxt;
 		mdl.polyeval_tree(degree, result_ctxt, enc_result, encoder, encryptor, mdl.coef, evaluator, decryptor);
 
+		cout << "Current depth = " << result_ctxt.coeff_mod_count() << endl;
+
 		// Verify result 
-		//vector<double> expected_result(dim, 0);
-		//for (int k = 0; k < dim; k++) {
-		//	double expected_result_sing = mdl.coef[degree];
-		//	for (int i = degree - 1; i >= 0; i--) {
-		//		expected_result_sing *= result[k];
-		//		expected_result_sing += mdl.coef[i];
-		//	}
-		//	expected_result[k] = expected_result_sing;
-		//	cout << "Expected Result[" << k << "] = " << expected_result[k] << endl;
-		//}
+		vector<double> expected_result(dim, 0);
+		for (int k = 0; k < dim; k++) {
+			double expected_result_sing = mdl.coef[degree];
+			for (int i = degree - 1; i >= 0; i--) {
+				expected_result_sing *= resReal[k];
+				expected_result_sing += mdl.coef[i];
+			}
+			expected_result[k] = expected_result_sing;
+			//cout << "Expected Result[" << k << "] = " << expected_result[k] << endl;
+		}
 
 		//decryptor.decrypt(result_ctxt, plain_result);
 		//encoder.decode(plain_result, result);
 
-		//for (int i = 0; i < dim; i++) {
-		//	cout << "Actual : " << result[i] << ", Expected : " << expected_result[i] << ", diff : " << abs(result[i] - expected_result[i]) << endl;
-		//}
+		/*for (int i = 0; i < dim; i++) {
+			cout << "Actual : " << result[i] << ", Expected : " << expected_result[i] << ", diff : " << abs(result[i] - expected_result[i]) << endl;
+		}*/
 
 		// Go through second layer dot product
 
-		/*double dotProduct = 0;
+		double dotProduct = 0;
 		for (int i = 0; i < dim; i++) {
-			dotProduct += result[i] * mdl.weights2[i];
+			dotProduct += expected_result[i] * mdl.weights2[i];
 		}
-		dotProduct += mdl.biases2[0];*/
+		dotProduct += mdl.biases2[0];
 
 		Plaintext weights2_plain;
 		encoder.encode(mdl.weights2, mdl.scale, weights2_plain);
 		Ciphertext destination;
 		mdl.dotProductPlain(weights2_plain, result_ctxt, dim, evaluator, encoder.slot_count(), destination);
+
+		cout << "Current depth = " << result_ctxt.coeff_mod_count() << endl;
 
 		// Add bias 2
 		Plaintext biases2_plain;
@@ -433,15 +496,17 @@ void testModel() {
 
 		cout << "Actual : " << result[0] << ", Expected : " << dotProduct << ", diff : " << abs(result[0] - dotProduct) << endl;*/
 
-		//double finalClass = mdl.coef[degree];
-		//for (int i = degree - 1; i >= 0; i--) {
-		//	finalClass *= result[0];
-		//	finalClass += mdl.coef[i];
-		//}
+		double finalClass = mdl.coef[degree];
+		for (int i = degree - 1; i >= 0; i--) {
+			finalClass *= dotProduct;
+			finalClass += mdl.coef[i];
+		}
 
 		// Go through last kernel
 		Ciphertext finalResult;
 		mdl.polyeval_tree(degree, finalResult, destination, encoder, encryptor, mdl.coef, evaluator, decryptor);
+
+		cout << "Current depth = " << finalResult.coeff_mod_count() << endl;
 		
 		// Verify result
 		decryptor.decrypt(finalResult, plain_result);
@@ -451,8 +516,56 @@ void testModel() {
 
 		predictions[s] = result[0];
 
-		loss += pow(predictions[s] - mdl.test_labels[s], 2);
-		cout << "Difference = " << predictions[s] - mdl.test_labels[s] << endl;
+		double diff = abs(predictions[s] - mdl.test_labels[s]);
+		loss += pow(diff, 2);
+		avgCalcErr += abs(predictions[s] - finalClass);
+
+		bool isFraud;
+		if (predictions[s] < 0.5) isFraud = false;
+		if (predictions[s] >= 0.5) isFraud = true;
+
+		if (mdl.test_labels[s] == 0 && !isFraud) {
+			tn += 1;
+		}
+		if (mdl.test_labels[s] == 0 && isFraud) {
+			fp += 1;
+		}
+		if (mdl.test_labels[s] == 1 && !isFraud) {
+			fn += 1;
+		}
+		if (mdl.test_labels[s] == 1 && isFraud) {
+			tp += 1;
+		}
+
+		avgActErr += abs(mdl.npRes[s] - predictions[s]);
+
+		cout << "Ciphertext Prediction = " << predictions[s] << endl;
+		cout << "Plaintext Prediction = " << finalClass << endl;
+		cout << "Numpy Prediction = " << mdl.npRes[s] << endl;
+		cout << "Real Label = " << mdl.test_labels[s] << endl;
+		cout << "Difference between Ciphertext Prediction and Plaintext Prediction = " << abs(predictions[s] - finalClass) << endl;
+		cout << "Difference between Ciphertext Prediction and Numpy Prediction = " << abs(predictions[s] - mdl.npRes[s]) << endl;
+		cout << "Difference between Ciphertext Prediction and Real Label = " << diff << endl;
 		cout << "Loss = " << loss << endl;
 	}
+
+	auto t2 = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+	cout << endl;
+	cout << "------------------------------------------------------------------------------------------------" << endl;
+	cout << endl;
+	cout << "Time it took to run 100 predictions (Seconds): " + to_string(duration/1000000) << endl;
+	cout << "Final Loss = " << loss / mdl.test_labels.size() << endl;
+	cout << "Legitimate Transactions Detected (True Negatives) = " << tn << endl;
+	cout << "Legitimate Transactions Incorrectly Detected (False Positives) = " << fp << endl;
+	cout << "Fraudulent Transactions Missed (False Negatives) = " << fn << endl;
+	cout << "Fraudulent Transactions Detected (True Positives) = " << tp << endl;
+	cout << "Precision = " << tp / (tp + fp + 0.00001) << endl;
+	cout << "Recall = " << tp / (tp + fn + 0.00001) << endl;
+	cout << "Average SEAL Plain to Cipher Calculation Error = " << avgCalcErr / mdl.test_labels.size() << endl;
+	cout << "Average Numpy to SEAL Calculation Error = " << avgActErr / mdl.test_labels.size() << endl;
+	cout << endl;
+	cout << "------------------------------------------------------------------------------------------------" << endl;
+	cout << endl;
+
 }

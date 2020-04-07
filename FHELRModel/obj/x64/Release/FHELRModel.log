@@ -1,10 +1,10 @@
 ﻿  model.cpp
-D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\model.cpp(38,13): warning C4244:  'initializing': conversion from 'double' to 'int', possible loss of data
-D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\model.cpp(202,1): warning C4267:  'argument': conversion from 'size_t' to 'int', possible loss of data
-D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\model.cpp(422,101): warning C4267:  'argument': conversion from 'size_t' to 'int', possible loss of data
+D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\model.cpp(47,14): warning C4244:  'initializing': conversion from 'double' to 'int', possible loss of data
+D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\model.cpp(249,1): warning C4267:  'argument': conversion from 'size_t' to 'int', possible loss of data
+D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\model.cpp(483,101): warning C4267:  'argument': conversion from 'size_t' to 'int', possible loss of data
   Generating code
-  54 of 3102 functions ( 1.7%) were compiled, the rest were copied from previous compilation.
-    4 functions were new in current compilation
-    32 functions had inline decision re-evaluated but remain unchanged
+  1 of 3865 functions (<0.1%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    24 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
   FHELRModel.vcxproj -> D:\Documents\University Files\Year 4\Thesis\dev\FHELRModel\FHELRModel\..\bin\x64\Release\fhelrmodel.exe
