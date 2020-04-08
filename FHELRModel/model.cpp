@@ -46,10 +46,10 @@ public:
 		else {
 			int depth = ceil(log2(degree));
 			cout << "depth = " << depth << endl;
-			vector<int> moduli(13, 40);
-			moduli[0] = 40;
-			moduli[moduli.size() - 1] = 40;
-			size_t poly_modulus_degree = 16384*2;
+			vector<int> moduli(13, 30);
+			moduli[0] = 30;
+			moduli[moduli.size() - 1] = 30;
+			size_t poly_modulus_degree = 16384;
 			parms.set_poly_modulus_degree(poly_modulus_degree);
 			parms.set_coeff_modulus(CoeffModulus::Create(
 				poly_modulus_degree, moduli));
@@ -60,7 +60,7 @@ public:
 		fsParam.close();
 		
 		// Set up scale
-		scale = pow(2.0, 40);
+		scale = pow(2.0, 30);
 		
 		// Set up context
 		ctx = SEALContext::Create(parms);
@@ -482,7 +482,7 @@ void testModel() {
 		Ciphertext destination;
 		mdl.dotProductPlain(weights2_plain, result_ctxt, dim, evaluator, encoder.slot_count(), destination);
 
-		cout << "Current depth = " << result_ctxt.coeff_mod_count() << endl;
+		cout << "Current depth = " << destination.coeff_mod_count() << endl;
 
 		// Add bias 2
 		Plaintext biases2_plain;
